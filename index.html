@@ -3618,6 +3618,15 @@
             if (importStatusElement && importStatusElement.parentNode) {
                 importStatusElement.textContent = '文件导入完成';
             }
+
+            // 导入完成后自动刷新数据预览（无需手动下拉选择）
+            setTimeout(() => {
+                try {
+                    updateDataPreview();
+                } catch (err) {
+                    console.error('自动刷新数据预览失败:', err);
+                }
+            }, 0);
         }
         
         function handleFileProcessingError(file, error, processedCount, totalFiles) {
@@ -3685,6 +3694,12 @@
 
         function processFiles(files) {
             if (files.length === 0) return;
+            
+            // 在非追加模式下，导入新文件前先清空现有数据与配置
+            const appendModeAtImport = document.getElementById('appendMode')?.checked || false;
+            if (!appendModeAtImport) {
+                removeAllFiles();
+            }
             
             // 显示上传进度
             if (elements.uploadProgress && elements.uploadProgress.parentNode) {
@@ -3864,10 +3879,13 @@
                                     // 更新统计信息
                                     updateDataStats();
                                     
-                                    // 如果是第一个文件，自动填充列选择
-                                    if (appData.worksheets.length === 1) {
+                                    // 非追加模式或首个文件时，自动填充列选择并识别数据结构
+                                    const appendModeDetect1 = document.getElementById('appendMode')?.checked || false;
+                                    if (!appendModeDetect1 || appData.worksheets.length === 1) {
                                         populateColumnSelects(jsonData[0] || [], jsonData);
                                         autoDetectDataStructure(jsonData);
+                                        // 自动识别完成后，尝试刷新预览（若配置已充分）
+                                        setTimeout(() => { try { updateDataPreview(); } catch(e){} }, 0);
                                     }
                                     
                                     completeFileProcessing(file, jsonData, processedCount, totalFiles);
@@ -3888,10 +3906,13 @@
                             // 更新统计信息
                             updateDataStats();
                             
-                            // 如果是第一个文件，自动填充列选择
-                            if (appData.worksheets.length === 1) {
+                            // 非追加模式或首个文件时，自动填充列选择并识别数据结构（与大数据分支一致）
+                            const appendModeDetect2 = document.getElementById('appendMode')?.checked || false;
+                            if (!appendModeDetect2 || appData.worksheets.length === 1) {
                                 populateColumnSelects(jsonData[0] || [], jsonData);
                                 autoDetectDataStructure(jsonData);
+                                // 自动识别完成后，尝试刷新预览（若配置已充分）
+                                setTimeout(() => { try { updateDataPreview(); } catch(e){} }, 0);
                             }
                             
                             completeFileProcessing(file, jsonData, processedCount, totalFiles);
@@ -4001,11 +4022,30 @@
                     elements.removeAllFiles.classList.add('hidden');
                 }
 
-                
-                // 清空列选择
-                elements.dateColumnSelect.innerHTML = '<option value="">-- 请选择 --</option>';
-                elements.dataStartColumnSelect.innerHTML = '<option value="">-- 请选择 --</option>';
-                elements.dataEndColumnSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+                const appendMode = document.getElementById('appendMode')?.checked || false;
+                if (!appendMode) {
+                    // 非追加模式：彻底重置数据与配置
+                    appData.worksheets = [];
+                    appData.parsedData = [];
+                    appData.processedData = [];
+
+                    appData.config = appData.config || {};
+                    appData.config.dateColumn = '';
+                    appData.config.dataStartColumn = '';
+                    appData.config.dataEndColumn = '';
+                    appData.config.meteringPointColumn = '';
+                    appData.config.multiplierColumn = '';
+                    appData.config.dataStructure = '';
+
+                    // 清空列选择（含计量点、多倍率列）
+                    elements.dateColumnSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+                    elements.dataStartColumnSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+                    elements.dataEndColumnSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+                    elements.meteringPointColumnSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+                    elements.multiplierColumnSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+                } else {
+                    // 追加模式：保留数据与配置，不清空列选择
+                }
             } else if (appData.worksheets.length > 0) {
                 // 重新填充列选择
                 populateColumnSelects(appData.worksheets[0].data[0] || [], appData.worksheets[0].data);
@@ -4024,10 +4064,19 @@
                 appData.worksheets = [];
                 appData.parsedData = [];
                 appData.processedData = [];
+                
+                // 同步重置配置
+                appData.config = appData.config || {};
+                appData.config.dateColumn = '';
+                appData.config.dataStartColumn = '';
+                appData.config.dataEndColumn = '';
+                appData.config.meteringPointColumn = '';
+                appData.config.multiplierColumn = '';
+                appData.config.dataStructure = '';
             } else {
                 // 追加模式下只清空文件列表，保留数据
                 appData.files = [];
-                // 不清除worksheets, parsedData, processedData
+                // 不清除worksheets, parsedData, processedData, config
             }
             
             // 清空UI
@@ -4037,11 +4086,19 @@
                 elements.removeAllFiles.classList.add('hidden');
             }
 
-            
-            // 清空列选择
+            // 清空列选择（含计量点、多倍率列）
             elements.dateColumnSelect.innerHTML = '<option value="">-- 请选择 --</option>';
             elements.dataStartColumnSelect.innerHTML = '<option value="">-- 请选择 --</option>';
             elements.dataEndColumnSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+            elements.meteringPointColumnSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+            elements.multiplierColumnSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+            
+            // 重置筛选、预览与概览
+            if (!appendMode) {
+                updateDataStats();
+                updateDataOverview();
+                updateDataPreview();
+            }
             
             showNotification('信息', '所有文件已移除', 'info');
         }
@@ -4621,8 +4678,8 @@
             elements.dataStartDate.innerHTML = '<option value="">-- 请选择起始日期 --</option>';
             elements.dataEndDate.innerHTML = '<option value="">-- 请选择结束日期 --</option>';
             
-            // 如果没有选择日期列，则返回
-            if (!appData.config.dateColumn) return;
+            // 如果没有选择日期列，则返回（注意：列索引0也是有效的）
+            if (appData.config.dateColumn === undefined || appData.config.dateColumn === null || appData.config.dateColumn === '') return;
             
             const dateCol = parseInt(appData.config.dateColumn);
             const dateSet = new Set();
@@ -4739,44 +4796,67 @@
         function updateDataPreview() {
             console.log('=== 开始数据预览更新 ===');
             
+            // 防抖/防重入：避免大数据下多次触发导致阻塞
+            if (appData.__isUpdatingPreview) {
+                console.log('数据预览更新进行中，本次调用已忽略');
+                return;
+            }
+            
             // 检查基础配置
             if (!validateDataConfiguration()) {
                 renderWaitingState();
                 return;
             }
             
+            // 先展示加载提示，避免长时间空白
+            if (elements.dataPreview && elements.dataPreview.parentNode) {
+                elements.dataPreview.innerHTML = `
+                    <div class="flex flex-col items-center justify-center py-12 px-6">
+                        <div class="w-12 h-12 mb-3 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                        <div class="text-sm text-slate-600">正在生成数据预览，请稍候...</div>
+                    </div>`;
+            }
+            
             // 更新日期选择器
             updateDateSelects();
             
-            // 解析工作表数据
-            parseWorksheetData();
-            
-            // 检查解析后的数据
-            if (appData.processedData.length === 0) {
-                renderNoDataState();
-                return;
-            }
-            
-            // 渲染数据预览界面
-            renderDataPreview();
-            
-            // 更新按钮状态
-            updatePreviewButtons();
-            
-            console.log('=== 数据预览更新完成 ===');
+            // 异步调度重型解析与渲染，释放UI线程
+            appData.__isUpdatingPreview = true;
+            setTimeout(() => {
+                try {
+                    // 解析工作表数据
+                    parseWorksheetData();
+                    
+                    // 检查解析后的数据
+                    if (appData.processedData.length === 0) {
+                        renderNoDataState();
+                        return;
+                    }
+                    
+                    // 渲染数据预览界面
+                    renderDataPreview();
+                    
+                    // 更新按钮状态
+                    updatePreviewButtons();
+                    
+                    console.log('=== 数据预览更新完成 ===');
+                } finally {
+                    appData.__isUpdatingPreview = false;
+                }
+            }, 0);
         }
         
         // 验证数据配置
         function validateDataConfiguration() {
-            const hasWorksheets = appData.worksheets.length > 0;
-            const hasDateColumn = appData.config.dateColumn;
-            const hasDataStartColumn = appData.config.dataStartColumn;
+            const hasWorksheets = Array.isArray(appData.worksheets) && appData.worksheets.length > 0;
+            const hasDateColumn = appData.config.dateColumn !== undefined && appData.config.dateColumn !== null && appData.config.dateColumn !== '';
+            const hasDataStartColumn = appData.config.dataStartColumn !== undefined && appData.config.dataStartColumn !== null && appData.config.dataStartColumn !== '';
             const dataStructure = document.querySelector('input[name="dataStructure"]:checked')?.value;
             
             // 对于列对行结构，需要数据结束列；对于列对列结构，不需要
             let hasRequiredColumns = true;
             if (dataStructure === 'columnToRow') {
-                hasRequiredColumns = appData.config.dataEndColumn;
+                hasRequiredColumns = (appData.config.dataEndColumn !== undefined && appData.config.dataEndColumn !== null && appData.config.dataEndColumn !== '');
             }
             
             console.log('验证配置状态:');
@@ -4924,8 +5004,12 @@
             }
              tableHtml += `<div class=\"bg-slate-100 border-b border-r border-slate-200 px-3 py-3 text-center font-semibold text-slate-800 sticky top-0 z-10 text-sm shadow-sm\">日总电能 (kWh)</div>`;
              
+             // 仅预览前100条，避免大数据渲染阻塞
+             const previewLimit = 100;
+             const rows = appData.processedData.slice(0, previewLimit);
+             
              // 数据行
-             appData.processedData.forEach((row, index) => {
+             rows.forEach((row, index) => {
                  const isSelected = appData.selectedStartDate && appData.selectedEndDate && 
                                    row.date >= appData.selectedStartDate && 
                                    row.date <= appData.selectedEndDate;
@@ -4953,6 +5037,11 @@
              });
              
              tableHtml += `</div>`;
+             
+             // 大数据提示
+             if (appData.processedData.length > previewLimit) {
+                tableHtml += `<div class=\"px-4 py-2 text-xs text-slate-500 bg-slate-50 border border-t-0 border-slate-200 rounded-b-2xl\">为保证性能，预览仅显示前 ${previewLimit} 条记录（实际共 ${appData.processedData.length} 条）。</div>`;
+             }
              return tableHtml;
          }
          
@@ -5648,7 +5737,7 @@
                 hourlyData: hourlyData,
                 dailyTotal: dailyTotal,
                 sourceFile: parsedRow.sourceFile,
-                meteringPoint: parsedRow.meteringPoint,
+                meteringPoint: (parsedRow.meteringPoint === undefined || parsedRow.meteringPoint === null || String(parsedRow.meteringPoint).trim() === '') ? '默认计量点' : String(parsedRow.meteringPoint).trim(),
                 timeInterval: interval, // 保存时间间隔信息
                 dataStructure: 'columnToRow' // 标记数据结构类型
             });
@@ -5774,7 +5863,7 @@
                 hourlyData: hourlyData,
                 dailyTotal: dailyTotal,
                 sourceFile: parsedRow.sourceFile,
-                meteringPoint: parsedRow.meteringPoint,
+                meteringPoint: (parsedRow.meteringPoint === undefined || parsedRow.meteringPoint === null || String(parsedRow.meteringPoint).trim() === '') ? '默认计量点' : String(parsedRow.meteringPoint).trim(),
                 timeInterval: interval, // 保存时间间隔信息
                 dataStructure: 'columnToColumn' // 标记数据结构类型
             });
@@ -5846,6 +5935,13 @@
                 
                 // 更新日期选择器
                 updateVisualizationDateSelects();
+                
+                // 重置可视化筛选为新数据的全选，避免旧选择与新数据不匹配导致无数据
+                appData.visualization.selectedDates = appData.processedData.map(d => d.date);
+                appData.visualization.selectedMeteringPoints = [...appData.meteringPoints];
+                if (elements.visualizationMeteringPointFilterSelect) {
+                    Array.from(elements.visualizationMeteringPointFilterSelect.options).forEach(opt => opt.selected = true);
+                }
                 
                 console.log('数据重新处理完成，共处理数据点:', appData.processedData.length);
                 
@@ -6061,6 +6157,10 @@
                 }
             });
             
+            // 如果数据中存在空/缺失计量点，为其添加统一占位『默认计量点』
+            if ([...meteringPointSet].some(v => v === undefined || v === null || String(v).trim() === '')) {
+                meteringPointSet.add('默认计量点');
+            }
             // 转换为数组并排序
             appData.meteringPoints = Array.from(meteringPointSet).sort();
             
@@ -6098,7 +6198,11 @@
             } else {
                 console.log('没有找到计量点，自动收集所有计量点');
                 // 如果没有预设的计量点，从数据中收集所有唯一的计量点
-                const allMeteringPoints = [...new Set(appData.processedData.map(d => d.meteringPoint || "").filter(mp => mp))];
+                const allMeteringPoints = [...new Set(appData.processedData.map(d => {
+                    const raw = d.meteringPoint;
+                    const v = (raw === undefined || raw === null || String(raw).trim() === '') ? '默认计量点' : String(raw).trim();
+                    return v;
+                }))];
                 appData.visualization.selectedMeteringPoints = allMeteringPoints;
                 appData.meteringPoints = allMeteringPoints;
                 console.log('自动收集计量点:', allMeteringPoints);
@@ -6581,6 +6685,14 @@
             
             // 检查图表实例是否存在，如果不存在则重新初始化
             if (!appData.chart) {
+                initializeVisualization();
+                return;
+            }
+            
+            // 如果图表Canvas已被替换或不在文档中，重新初始化
+            if (!appData.chart.canvas || !document.body.contains(appData.chart.canvas)) {
+                try { appData.chart.destroy(); } catch (e) {}
+                appData.chart = null;
                 initializeVisualization();
                 return;
             }
@@ -11394,6 +11506,24 @@ function parseDateTime(dateTimeStr, format) {
                 console.log('自动选择所有计量点:', appData.visualization.selectedMeteringPoints);
             }
             
+            // 当已选择集合与新数据可用集合无交集时，自动回退为全选
+            const availableDateSet = new Set(appData.processedData.map(d => d.date));
+            if (appData.visualization.selectedDates.length > 0) {
+                const hasDateOverlap = appData.visualization.selectedDates.some(d => availableDateSet.has(d));
+                if (!hasDateOverlap && appData.processedData.length > 0) {
+                    appData.visualization.selectedDates = appData.processedData.map(d => d.date);
+                    console.log('检测到选择的日期与新数据不重叠，已自动重置为全选日期');
+                }
+            }
+            const availableMPSet = new Set(appData.meteringPoints);
+            if (appData.visualization.selectedMeteringPoints.length > 0) {
+                const hasMPOverlap = appData.visualization.selectedMeteringPoints.some(mp => availableMPSet.has(mp));
+                if (!hasMPOverlap && appData.meteringPoints.length > 0) {
+                    appData.visualization.selectedMeteringPoints = [...appData.meteringPoints];
+                    console.log('检测到选择的计量点与新数据不重叠，已自动重置为全部计量点');
+                }
+            }
+            
             const filteredData = DataUtils.filterData(appData.processedData, {
                 dates: appData.visualization.selectedDates,
                 meteringPoints: appData.visualization.selectedMeteringPoints.length > 0 ? 
@@ -11477,7 +11607,12 @@ function parseDateTime(dateTimeStr, format) {
                     
                     // 计量点过滤
                     if (filters.meteringPoints && filters.meteringPoints.length > 0) {
-                        if (!filters.meteringPoints.includes(item.meteringPoint || "")) return false;
+                        // 与下拉选项和分组逻辑保持一致：将空值统一映射为『默认计量点』
+                        const rawMp = item.meteringPoint;
+                        const mpValue = (rawMp === undefined || rawMp === null || String(rawMp).trim() === '')
+                            ? '默认计量点'
+                            : String(rawMp).trim();
+                        if (!filters.meteringPoints.includes(mpValue)) return false;
                     }
                     
                     // 自定义过滤器
@@ -12519,7 +12654,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             data.forEach(row => {
                 const date = row.date;
-                const meteringPoint = row.meteringPoint || '默认计量点';
+                const meteringPoint = (row.meteringPoint === undefined || row.meteringPoint === null || String(row.meteringPoint).trim() === '') ? '默认计量点' : String(row.meteringPoint).trim();
                 const key = `${date}_${meteringPoint}`;
                 
                 if (!groups[key]) {
